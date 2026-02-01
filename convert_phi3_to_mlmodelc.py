@@ -10,14 +10,17 @@ OUTPUT_MODEL_NAME = "Phi3Mini.mlmodelc"
 
 print("🔄 Загружаем токенизатор и модель...")
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True)
+
+# 🔥 ИСПРАВЛЕНИЕ: device_map=None — отключает accelerate
 model = AutoModelForCausalLM.from_pretrained(
     MODEL_NAME,
     torch_dtype="auto",
     trust_remote_code=True,
-    device_map="cpu"  # Важно: на M1 будет автоматически оптимизировано
+    device_map=None,  # ← ВАЖНО: отключает автоматическое распределение
+    low_cpu_mem_usage=True,  # Рекомендуется для M1
 )
 
-# Создаем пример входа (входной тензор)
+# Создаем пример входа
 prompt = "Hello, how are you?"
 inputs = tokenizer(prompt, return_tensors="pt")
 input_ids = inputs["input_ids"]
@@ -35,9 +38,9 @@ mlmodel = ct.convert(
             dtype=input_ids.dtype
         )
     ],
-    convert_to="mlprogram",  # Обязательно для Phi-3
-    compute_units=ct.ComputeUnit.ALL,  # Используем все ядра
-    skip_model_load=True  # Ускоряет сохранение
+    convert_to="mlprogram",
+    compute_units=ct.ComputeUnit.ALL,
+    skip_model_load=True
 )
 
 # Сохраняем модель
