@@ -3,6 +3,12 @@
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig
 import coremltools as ct
+import numpy as np
+
+# Проверка версии NumPy — критично для coremltools
+print(f"✅ NumPy version: {np.__version__}")
+if int(np.__version__.split('.')[0]) >= 2:
+    raise RuntimeError("❌ NumPy 2.0+ не поддерживается coremltools 7.0. Используйте numpy==1.26.4")
 
 MODEL_NAME = "microsoft/Phi-3-mini-4k-instruct"
 OUTPUT_MODEL_NAME = "Phi3Mini.mlmodelc"
@@ -11,16 +17,12 @@ print("🔄 Загружаем токенизатор и конфиг...")
 
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True)
 
-# 🔧 КЛЮЧЕВОЙ ФИКС: УБИРАЕМ rope_scaling — он не нужен и вызывает ошибку!
 config = AutoConfig.from_pretrained(MODEL_NAME, trust_remote_code=True)
-
-# Убираем rope_scaling полностью — это ВАЖНО!
 if hasattr(config, 'rope_scaling'):
-    config.rope_scaling = None  # ← ФИКС: УБИРАЕМ ВСЁ, что вызывает ошибку
-
+    config.rope_scaling = None  # 🔧 ФИКС: Убираем rope_scaling
 print("✅ Конфиг обновлён: rope_scaling = None")
 
-# Загружаем модель с исправленным конфигом
+# 🔧 ОБЯЗАТЕЛЬНО: low_cpu_mem_usage=True требует accelerate
 model = AutoModelForCausalLM.from_pretrained(
     MODEL_NAME,
     config=config,
@@ -30,12 +32,11 @@ model = AutoModelForCausalLM.from_pretrained(
     low_cpu_mem_usage=True,
 )
 
-# Пример входа
+# ✅ ПРИМЕР ВХОДА — КЛЮЧЕВОЙ ФИКС: int64 → int32
 prompt = "Hello, how are you?"
 inputs = tokenizer(prompt, return_tensors="pt")
-input_ids = inputs["input_ids"]
-
-print(f"✅ Входной тензор: {input_ids.shape}")
+input_ids = inputs["input_ids"].to(torch.int32)  # ✅ ВАЖНО: преобразуем в int32!
+print(f"✅ Входной тензор: {input_ids.shape}, dtype={input_ids.dtype}")
 
 # Конвертация в Core ML
 print("🔄 Конвертируем модель в Core ML (это займет 5–10 минут)...")
@@ -45,7 +46,7 @@ mlmodel = ct.convert(
         ct.TensorType(
             name="input_ids",
             shape=input_ids.shape,
-            dtype=input_ids.dtype
+            dtype=input_ids.dtype  # ✅ Теперь это torch.int32 — поддерживается!
         )
     ],
     convert_to="mlprogram",
