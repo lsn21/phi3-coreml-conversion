@@ -9,15 +9,28 @@ MODEL_NAME = "microsoft/Phi-3-mini-4k-instruct"
 OUTPUT_MODEL_NAME = "Phi3Mini.mlmodelc"
 
 print("🔄 Загружаем токенизатор и модель...")
+
+# Загружаем токенизатор
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True)
 
-# 🔥 ИСПРАВЛЕНИЕ: device_map=None — отключает accelerate
+# Загружаем конфиг, чтобы исправить rope_scaling
+from transformers import AutoConfig
+config = AutoConfig.from_pretrained(MODEL_NAME, trust_remote_code=True)
+
+# 🔧 ИСПРАВЛЕНИЕ: Принудительно задаём rope_scaling, если его нет или он пуст
+if not config.rope_scaling:
+    config.rope_scaling = {"type": "linear"}  # ← ФИКС: добавляем тип
+elif isinstance(config.rope_scaling, dict) and "type" not in config.rope_scaling:
+    config.rope_scaling["type"] = "linear"   # ← ФИКС: если есть, но нет "type"
+
+# Теперь загружаем модель с исправленным конфигом
 model = AutoModelForCausalLM.from_pretrained(
     MODEL_NAME,
+    config=config,  # ← ИСПОЛЬЗУЕМ ИСПРАВЛЕННЫЙ КОНФИГ
     torch_dtype="auto",
     trust_remote_code=True,
-    device_map=None,  # ← ВАЖНО: отключает автоматическое распределение
-    low_cpu_mem_usage=True,  # Рекомендуется для M1
+    device_map=None,         # ← ВАЖНО: отключаем device_map
+    low_cpu_mem_usage=True,  # Оптимизация для M1
 )
 
 # Создаем пример входа
