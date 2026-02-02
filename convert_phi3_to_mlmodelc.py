@@ -51,7 +51,8 @@ mlmodel = ct.convert(
     ],
     convert_to="mlprogram",
     compute_units=ct.ComputeUnit.ALL,
-    skip_model_load=True
+    skip_model_load=True,
+    source="pytorch"  # ✅ ОБЯЗАТЕЛЬНО ДОБАВИТЬ ЭТОТ ПАРАМЕТР!
 )
 
 # Сохраняем
