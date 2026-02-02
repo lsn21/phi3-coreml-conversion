@@ -4,40 +4,36 @@ import coremltools as ct
 import numpy as np
 
 MODEL_NAME = "microsoft/Phi-3-mini-4k-instruct"
-OUTPUT_MODEL_NAME = "Phi3Mini.mlmodelc"
+OUTPUT_MODEL_NAME = "Phi3Mini.mlpackage"  # ✅ ВАЖНО: .mlpackage для mlprogram
 
 # 1. Загружаем токенизатор
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True)
 
-# 2. Фиксим rope_scaling (обязательно!)
+# 2. Отключаем rope_scaling (обязательно!)
 config = AutoConfig.from_pretrained(MODEL_NAME, trust_remote_code=True)
 if hasattr(config, 'rope_scaling'):
     config.rope_scaling = None
 
-# 3. Загружаем модель в fp32 (важно!)
+# 3. Загружаем модель в fp32
 model = AutoModelForCausalLM.from_pretrained(
     MODEL_NAME,
     config=config,
-    torch_dtype=torch.float32,  # ⚠️ Используем float32, а не "auto"
+    torch_dtype=torch.float32,
     trust_remote_code=True,
     device_map=None,
     low_cpu_mem_usage=True,
 )
 
-# 4. Переводим в eval-режим и отключаем dropout
 model.eval()
 model = model.to("cpu")
 
-# 5. Генерируем тестовый ввод (важно: длина должна быть фиксированной!)
+# 4. Подготавливаем пример входа
 prompt = "Hello, how are you?"
 inputs = tokenizer(prompt, return_tensors="pt", padding="max_length", max_length=128, truncation=True)
-input_ids = inputs["input_ids"]  # Shape: [1, 128]
-attention_mask = inputs["attention_mask"]  # Shape: [1, 128]
+input_ids = inputs["input_ids"]      # [1, 128]
+attention_mask = inputs["attention_mask"]  # [1, 128]
 
-# 6. ✅ СОЗДАЁМ TORCHSCRIPT ЧЕРЕЗ trace() — КЛЮЧЕВОЙ ШАГ!
-print("🔄 Создаём TorchScript через tracing...")
-
-# Определяем сигнатуру входа для tracing
+# 5. Обертка для трассировки
 class Phi3Wrapper(torch.nn.Module):
     def __init__(self, model):
         super().__init__()
@@ -48,31 +44,28 @@ class Phi3Wrapper(torch.nn.Module):
 
 wrapper = Phi3Wrapper(model)
 
-# Выполняем tracing
+# 6. Трассировка → TorchScript
 traced_model = torch.jit.trace(
     wrapper,
     (input_ids, attention_mask),
-    check_trace=False,  # ⚠️ Иногда trace не проходит — отключаем проверку
+    check_trace=False,
     strict=False
 )
 
 print("✅ TorchScript создан успешно!")
 
-# 7. Конвертируем в Core ML — теперь source не нужен, потому что это TorchScript
-print("🔄 Конвертируем TorchScript в Core ML...")
-
+# 7. Конвертация в Core ML (mlprogram)
 mlmodel = ct.convert(
     traced_model,
     inputs=[
         ct.TensorType(name="input_ids", shape=input_ids.shape, dtype=np.int32),
         ct.TensorType(name="attention_mask", shape=attention_mask.shape, dtype=np.int32),
     ],
-    convert_to="mlprogram",
+    convert_to="mlprogram",  # ✅ Используем mlprogram
     compute_units=ct.ComputeUnit.ALL,
     skip_model_load=True,
 )
 
-# 8. Сохраняем
-mlmodel.save(OUTPUT_MODEL_NAME)
+# 8. Сохраняем с правильным расширением
+mlmodel.save(OUTPUT_MODEL_NAME)  # ✅ .mlpackage — ОБЯЗАТЕЛЬНО!
 print(f"🎉 Успешно сохранено: {OUTPUT_MODEL_NAME}")
-
