@@ -46,7 +46,7 @@ mlmodel = ct.convert(
         ct.TensorType(
             name="input_ids",
             shape=input_ids.shape,
-            dtype=input_ids.dtype  # ✅ Теперь это torch.int32 — поддерживается!
+            dtype=np.int32  # ✅ Чётко и надёжно
         )
     ],
     convert_to="mlprogram",
